@@ -5,7 +5,8 @@ extern crate alloc;
 #[cfg(test)]
 mod tests;
 use core::{ptr, mem, any::{self, Any}, borrow::Borrow, cell::{RefCell, UnsafeCell}, cmp::Ordering, fmt::{self, Debug, Display, Formatter}, hash::{Hash, Hasher}, ops::{Add, Deref, Div, Mul, Neg, Rem, Sub}};
-use alloc::{collections::{HashMap, HashSet}, rc::Rc};
+use alloc::{rc::Rc};
+use hashbrown::{HashMap, HashSet};
 use num::{bigint::ParseBigIntError, Integer, Num, One, Signed, ToPrimitive};
 
 use alloc::{boxed::Box, vec::Vec, string::{String, ToString}};
@@ -52,11 +53,10 @@ pub mod dafny_runtime_conversions {
     use num::BigInt;
     use num::ToPrimitive;
 
-    use alloc::collections::HashMap;
-    use alloc::collections::HashSet;
+    use hashbrown::HashMap;
+    use hashbrown::HashSet;
     use alloc::rc::Rc;
     use alloc::vec::Vec;
-    use alloc::string::String;
     use core::hash::Hash;
 
     pub fn dafny_int_to_bigint(i: &DafnyInt) -> BigInt {
@@ -1946,7 +1946,7 @@ macro_rules! set {
         {
             // No warning about this variable not needing to be mut in the case of an empty set
             #[allow(unused_mut)]
-            let mut temp_hash = ::alloc::collections::HashSet::new();
+            let mut temp_hash = ::hashbrown::HashSet::new();
             $(
                 temp_hash.insert($x);
             )*
@@ -1960,7 +1960,7 @@ macro_rules! multiset {
     ($($x:expr), *) => {
         {
             #[allow(unused_mut)]
-            let mut temp_hash = ::std::collections::HashMap::new();
+            let mut temp_hash = ::hashbrown::HashMap::new();
             #[allow(unused_mut)]
             let mut total_size: usize = 0;
             $( {
