@@ -1,7 +1,17 @@
+#![no_std]
+
+extern crate alloc;
+
 #[cfg(test)]
 mod tests;
-use std::{any::Any, borrow::Borrow, cell::{RefCell, UnsafeCell}, cmp::Ordering, collections::{HashMap, HashSet}, fmt::{Debug, Display, Formatter}, hash::{Hash, Hasher}, ops::{Add, Deref, Div, Mul, Neg, Rem, Sub}, rc::Rc};
+use core::{ptr, mem, any::{self, Any}, borrow::Borrow, cell::{RefCell, UnsafeCell}, cmp::Ordering, fmt::{self, Debug, Display, Formatter}, hash::{Hash, Hasher}, ops::{Add, Deref, Div, Mul, Neg, Rem, Sub}};
+use alloc::{rc::Rc};
+use hashbrown::{HashMap, HashSet};
 use num::{bigint::ParseBigIntError, Integer, Num, One, Signed, ToPrimitive};
+
+use alloc::{boxed::Box, vec::Vec, string::{String, ToString}};
+
+use alloc::vec;
 
 pub use once_cell::unsync::Lazy;
 
@@ -43,10 +53,11 @@ pub mod dafny_runtime_conversions {
     use num::BigInt;
     use num::ToPrimitive;
 
-    use std::collections::HashMap;
-    use std::collections::HashSet;
-    use std::rc::Rc;
-    use std::hash::Hash;
+    use hashbrown::HashMap;
+    use hashbrown::HashSet;
+    use alloc::rc::Rc;
+    use alloc::vec::Vec;
+    use core::hash::Hash;
 
     pub fn dafny_int_to_bigint(i: &DafnyInt) -> BigInt {
         i.data.as_ref().clone()
@@ -98,6 +109,8 @@ pub mod dafny_runtime_conversions {
     pub mod unicode_chars_true {
         use crate::Sequence;
 
+        use alloc::string::String;
+
         type DafnyChar = crate::DafnyChar;
         type DafnyString = Sequence<DafnyChar>;
 
@@ -113,6 +126,9 @@ pub mod dafny_runtime_conversions {
     // --unicode-chars:false
     pub mod unicode_chars_false {
         use crate::Sequence;
+
+        use alloc::vec::Vec;
+        use alloc::string::String;
 
         type DafnyCharUTF16 = crate::DafnyCharUTF16;
         type DafnyString = Sequence<DafnyCharUTF16>;
@@ -201,19 +217,19 @@ impl PartialEq<DafnyInt> for DafnyInt {
 }
 impl Eq for DafnyInt {}
 impl Hash for DafnyInt {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.data.hash(state);
     }
 }
 
 impl DafnyPrint for DafnyInt {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
 
 impl Debug for DafnyInt {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
@@ -332,7 +348,7 @@ impl PartialOrd<DafnyInt> for DafnyInt {
 impl DafnyInt {
     #[inline]
     pub fn parse_bytes(number: &[u8], radix: u32) -> DafnyInt {
-        DafnyInt{data: ::std::rc::Rc::new(BigInt::parse_bytes(number, radix).unwrap())}
+        DafnyInt{data: Rc::new(BigInt::parse_bytes(number, radix).unwrap())}
     }
     pub fn from_usize(usize: usize) -> DafnyInt {
         DafnyInt{data: Rc::new(BigInt::from(usize))}
@@ -390,7 +406,7 @@ impl <T: DafnyType> Add<&Sequence<T>> for &Sequence<T>
 }
 
 impl <T: DafnyTypeEq> Hash for Sequence<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.cardinality_usize().hash(state);
         let array = self.to_array();
         // Iterate over the elements
@@ -624,7 +640,7 @@ impl <T: DafnyTypeEq> PartialOrd for Sequence<T> {
 
 impl <V: DafnyType> DafnyPrint for Sequence<V>
 {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         if !V::is_char() {
             write!(f, "[")?;
         }
@@ -645,7 +661,7 @@ impl <V: DafnyType> DafnyPrint for Sequence<V>
 }
 
 impl <V: DafnyType> Debug for Sequence<V> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -717,7 +733,7 @@ impl <K: DafnyTypeEq, V: DafnyTypeEq> Map<K, V>
         Map { data: Rc::new(values) }
     }
     pub fn to_hashmap_owned<K2, V2>(&self, converter_k: fn(&K)->K2, converter_v: fn(&V)->V2) -> HashMap<K2, V2>
-      where K2: Eq + std::hash::Hash, V2: Clone
+      where K2: Eq + Hash, V2: Clone
     {
         let mut result: HashMap<K2, V2> = HashMap::new();
         for (k, v) in self.data.iter() {
@@ -819,7 +835,7 @@ impl <K: DafnyTypeEq> Map<K, DafnyInt> {
 }
 
 pub struct MapBuilder<K, V>
-  where K: Clone + Eq + std::hash::Hash, V: Clone
+  where K: Clone + Eq + Hash, V: Clone
 {
     data: HashMap<K, V>
 }
@@ -844,7 +860,7 @@ impl <K, V> MapBuilder<K, V>
 impl <K, V> DafnyPrint for Map<K, V>
   where K: DafnyTypeEq, V: DafnyTypeEq
 {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         f.write_str("map[")?;
       let mut first = true;
       for (k, v) in self.data.iter() {
@@ -865,7 +881,7 @@ impl <K, V> DafnyPrint for Map<K, V>
 impl <K, V> Debug for Map<K, V>
   where K: DafnyTypeEq, V: DafnyTypeEq
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -1069,7 +1085,7 @@ impl <V: DafnyTypeEq> Set<V>
 }
 
 pub struct SetBuilder<T>
-  where T: Clone + Eq + std::hash::Hash
+  where T: Clone + Eq + Hash
 {
     data: HashMap<T, bool>
 }
@@ -1098,7 +1114,7 @@ impl <T: DafnyTypeEq> SetBuilder<T>
 
 impl <V: DafnyTypeEq> DafnyPrint for Set<V>
 {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         f.write_str("{")?;
         let mut first = true;
         for value in self.data.iter() {
@@ -1115,7 +1131,7 @@ impl <V: DafnyTypeEq> DafnyPrint for Set<V>
 impl <V> Debug for Set<V>
   where V: DafnyTypeEq
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -1310,7 +1326,7 @@ impl <V: DafnyTypeEq> PartialOrd<Multiset<V>> for Multiset<V> {
 }
 
 impl <V: DafnyTypeEq> DafnyPrint for Multiset<V> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         f.write_str("multiset{")?;
         let mut first = true;
         for value in self.data.iter() {
@@ -1330,7 +1346,7 @@ impl <V: DafnyTypeEq> DafnyPrint for Multiset<V> {
 impl <V> Debug for Multiset<V>
   where V: DafnyTypeEq
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -1505,14 +1521,14 @@ impl <A: Default + 'static> Default for LazyFieldWrapper<A> {
 }
 
 impl <A: DafnyPrint> DafnyPrint for LazyFieldWrapper<A> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         self.0.deref().fmt_print(f, in_seq)
     }
 }
 
 pub struct FunctionWrapper<A: ?Sized>(pub A);
 impl <A> DafnyPrint for FunctionWrapper<A> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "<function>")
     }
 }
@@ -1531,7 +1547,7 @@ impl <A: ?Sized> PartialEq for FunctionWrapper<Rc<A>> {
 
 pub struct DafnyPrintWrapper<T>(pub T);
 impl <T: DafnyPrint> Display for DafnyPrintWrapper<&T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.fmt_print(f, false)
     }
 }
@@ -1539,15 +1555,15 @@ impl <T: DafnyPrint> Display for DafnyPrintWrapper<&T> {
 // from gazebo
 #[inline]
 pub unsafe fn transmute_unchecked<A, B>(x: A) -> B {
-    assert_eq!(std::mem::size_of::<A>(), std::mem::size_of::<B>());
-    debug_assert_eq!(0, (&x as *const A).align_offset(std::mem::align_of::<B>()));
-    let b = std::ptr::read(&x as *const A as *const B);
-    std::mem::forget(x);
+    assert_eq!(mem::size_of::<A>(), mem::size_of::<B>());
+    debug_assert_eq!(0, (&x as *const A).align_offset(mem::align_of::<B>()));
+    let b = ptr::read(&x as *const A as *const B);
+    mem::forget(x);
     b
 }
 
 pub trait DafnyPrint {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result;
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result;
 
     // Vec<char> gets special treatment so we carry that information here
     #[inline]
@@ -1557,16 +1573,16 @@ pub trait DafnyPrint {
 }
 
 impl <T> DafnyPrint for *const T {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
-        write!(f, "<{} object>", std::any::type_name::<T>())
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
+        write!(f, "<{} object>", any::type_name::<T>())
     }
 }
 
 macro_rules! impl_print_display {
     ($name:ty) => {
         impl DafnyPrint for $name {
-            fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
-                std::fmt::Display::fmt(&self, f)
+            fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
+                fmt::Display::fmt(&self, f)
             }
         }
         impl DafnyType for $name {}
@@ -1590,19 +1606,19 @@ impl_print_display! { i128 }
 impl_print_display! { usize }
 
 impl DafnyPrint for f32 {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "{:.1}", self)
     }
 }
 
 impl DafnyPrint for f64 {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "{:.1}", self)
     }
 }
 
 impl DafnyPrint for () {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "()")
     }
 }
@@ -1615,7 +1631,7 @@ impl DafnyTypeEq for DafnyCharUTF16 {}
 
 impl DafnyPrint for DafnyCharUTF16 {
     #[inline]
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         let real_char = char::decode_utf16(vec!(self.clone()).iter().map(|v| v.0))
         .map(|r| r.map_err(|e| e.unpaired_surrogate()))
         .collect::<Vec<_>>()[0];
@@ -1641,7 +1657,7 @@ impl DafnyPrint for DafnyCharUTF16 {
 
 impl Debug for DafnyCharUTF16
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -1672,7 +1688,7 @@ impl DafnyTypeEq for DafnyChar {}
 
 impl DafnyPrint for DafnyChar {
     #[inline]
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         if in_seq {
             write!(f, "{}", self.0)
         } else {
@@ -1688,7 +1704,7 @@ impl DafnyPrint for DafnyChar {
 
 impl Debug for DafnyChar
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.fmt_print(f, false)
     }
 }
@@ -1712,7 +1728,7 @@ impl Hash for DafnyChar {
 }
 
 impl <T: DafnyPrint> DafnyPrint for Option<T> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         match self {
             Some(x) => x.fmt_print(f, false),
             None => write!(f, "null")
@@ -1721,7 +1737,7 @@ impl <T: DafnyPrint> DafnyPrint for Option<T> {
 }
 
 impl DafnyPrint for BigInt {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "{}", self)
     }
 }
@@ -1763,7 +1779,7 @@ fn divides_a_power_of_10(mut i: BigInt) -> (bool, BigInt, usize) {
 }
 
 impl DafnyPrint for BigRational {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         if self.denom() == &One::one() || self.numer() == &Zero::zero() {
             write!(f, "{}.0", self.numer())
         } else {
@@ -1800,13 +1816,13 @@ impl DafnyPrint for BigRational {
 }
 
 impl <T: DafnyPrint> DafnyPrint for Rc<T> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, in_seq: bool) -> fmt::Result {
         self.as_ref().fmt_print(f, in_seq)
     }
 }
 
 impl <T: DafnyPrint> DafnyPrint for Vec<T> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         if !T::is_char() {
             write!(f, "[")?;
         }
@@ -1832,13 +1848,13 @@ impl <T: DafnyPrint> DafnyPrint for Vec<T> {
 }
 
 impl <T: DafnyPrint> DafnyPrint for RefCell<T> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         self.borrow().fmt_print(f, _in_seq)
     }
 }
 
 impl <T: DafnyPrint> DafnyPrint for HashSet<T> {
-    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+    fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
         write!(f, "{{")?;
 
         let mut i = 0;
@@ -1876,7 +1892,7 @@ macro_rules! impl_tuple_print {
             $($items: DafnyPrint,)*
         {
             #[allow(unused_assignments)]
-            fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> std::fmt::Result {
+            fn fmt_print(&self, f: &mut Formatter<'_>, _in_seq: bool) -> fmt::Result {
                 #[allow(non_snake_case)]
                 let ($($items,)*) = self;
 
@@ -1930,7 +1946,7 @@ macro_rules! set {
         {
             // No warning about this variable not needing to be mut in the case of an empty set
             #[allow(unused_mut)]
-            let mut temp_hash = ::std::collections::HashSet::new();
+            let mut temp_hash = ::hashbrown::HashSet::new();
             $(
                 temp_hash.insert($x);
             )*
@@ -1944,7 +1960,7 @@ macro_rules! multiset {
     ($($x:expr), *) => {
         {
             #[allow(unused_mut)]
-            let mut temp_hash = ::std::collections::HashMap::new();
+            let mut temp_hash = ::hashbrown::HashMap::new();
             #[allow(unused_mut)]
             let mut total_size: usize = 0;
             $( {

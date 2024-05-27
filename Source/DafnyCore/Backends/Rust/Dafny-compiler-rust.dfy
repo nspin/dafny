@@ -23,9 +23,9 @@ module RAST
     {
       match this {
         case ExternMod(name) =>
-          "mod " + name + ";"
+          "pub mod " + name + ";"
         case Mod(name, body) =>
-          "mod " + name + " {" + "\n" + ind + IND +
+          "pub mod " + name + " {" + "\n" + ind + IND +
           SeqToString(
             body,
             (modDecl: ModDecl) requires modDecl < this =>
@@ -180,13 +180,13 @@ module RAST
   const Self := Borrowed(SelfOwned)
   const SelfMut := BorrowedMut(SelfOwned)
   function Rc(underlying: Type): Type {
-    TypeApp(std_type.MSel("rc").MSel("Rc"), [underlying])
+    TypeApp(alloc_type.MSel("rc").MSel("Rc"), [underlying])
   }
   function RefCell(underlying: Type): Type {
-    TypeApp(std_type.MSel("cell").MSel("RefCell"), [underlying])
+    TypeApp(core_type.MSel("cell").MSel("RefCell"), [underlying])
   }
   function Vec(underlying: Type): Type {
-    TypeApp(std_type.MSel("vec").MSel("Vec"), [underlying])
+    TypeApp(alloc_type.MSel("vec").MSel("Vec"), [underlying])
   }
   function NewVec(elements: seq<Expr>): Expr {
     Call(Identifier("vec!"), [], elements)
@@ -203,7 +203,7 @@ module RAST
 
   const CloneTrait := RawType("Clone")
   const DafnyPrintTrait := RawType("::dafny_runtime::DafnyPrint")
-  const DefaultTrait := RawType("::std::default::Default")
+  const DefaultTrait := RawType("::core::default::Default")
   const StaticTrait := RawType("'static")
 
   function RawType(content: string): Type {
@@ -233,7 +233,7 @@ module RAST
         case ImplType(underlying) => "impl " + underlying.ToString(ind)
         case DynType(underlying) => "dyn " + underlying.ToString(ind)
         case FnType(arguments, returnType) =>
-          "::std::ops::Fn("+
+          "::core::ops::Fn("+
           SeqToString(arguments, (arg: Type) requires arg < this =>
                         arg.ToString(ind + IND), ", ")
           +") -> " + returnType.ToString(ind + IND)
@@ -279,8 +279,9 @@ module RAST
   }
 
   const global_type := TIdentifier("")
-  const std_type := global_type.MSel("std")
-  const cell_type := std_type.MSel("cell")
+  const core_type := global_type.MSel("core")
+  const alloc_type := global_type.MSel("alloc")
+  const cell_type := core_type.MSel("cell")
   const refcell_type := cell_type.MSel("RefCell")
   const dafny_runtime_type := global_type.MSel("dafny_runtime")
 
@@ -841,16 +842,18 @@ module RAST
   const dafny_runtime_Multiset := dafny_runtime.MSel("Multiset")
   const dafny_runtime_Multiset_from_array := dafny_runtime_Multiset.MSel("from_array")
 
-  const std := global.MSel("std")
+  const core := global.MSel("core")
 
-  const std_rc := std.MSel("rc")
+  const alloc := global.MSel("alloc")
 
-  const std_rc_Rc := std_rc.MSel("Rc")
+  const alloc_rc := alloc.MSel("rc")
 
-  const std_rc_Rc_new := std_rc_Rc.MSel("new")
+  const alloc_rc_Rc := alloc_rc.MSel("Rc")
+
+  const alloc_rc_Rc_new := alloc_rc_Rc.MSel("new")
 
   function RcNew(underlying: Expr): Expr {
-    Call(std_rc_Rc_new, [], [underlying])
+    Call(alloc_rc_Rc_new, [], [underlying])
   }
 
   datatype Fn =
@@ -1065,13 +1068,13 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
             fieldInits := fieldInits + [
               R.AssignIdentifier(
                 escapeIdent(field.formal.name),
-                R.RawExpr("::std::cell::RefCell::new(" + eStr.ToString(IND) + ")"))];
+                R.RawExpr("::core::cell::RefCell::new(" + eStr.ToString(IND) + ")"))];
           }
           case None => {
             fieldInits := fieldInits + [
               R.AssignIdentifier(
                 escapeIdent(field.formal.name),
-                R.RawExpr("::std::cell::RefCell::new(::std::default::Default::default())"))];
+                R.RawExpr("::core::cell::RefCell::new(::core::default::Default::default())"))];
           }
         }
 
@@ -1081,11 +1084,11 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
       var typeParamI := 0;
       while typeParamI < |c.typeParams| {
         var tpeGen := GenType(c.typeParams[typeParamI], false, false);
-        fields := fields + [R.Formal("_phantom_type_param_" + Strings.OfNat(typeParamI), R.TypeApp(R.std_type.MSel("marker").MSel("PhantomData"), [tpeGen]))];
+        fields := fields + [R.Formal("_phantom_type_param_" + Strings.OfNat(typeParamI), R.TypeApp(R.core_type.MSel("marker").MSel("PhantomData"), [tpeGen]))];
         fieldInits := fieldInits + [
           R.AssignIdentifier(
             "_phantom_type_param_" + Strings.OfNat(typeParamI),
-            R.RawExpr("::std::marker::PhantomData"))];
+            R.RawExpr("::core::marker::PhantomData"))];
 
         typeParamI := typeParamI + 1;
       }
@@ -1171,8 +1174,8 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
              R.PRIV,
              R.Fn(
                "fmt_print", [],
-               [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::std::fmt::Formatter")), R.Formal("_in_seq", R.RawType("bool"))],
-               Some(R.RawType("std::fmt::Result")),
+               [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::core::fmt::Formatter")), R.Formal("_in_seq", R.RawType("bool"))],
+               Some(R.RawType("core::fmt::Result")),
                "",
                Some(R.RawExpr("write!(_formatter, \"" + c.enclosingModule.id + "." + c.name + "\")"))
              ))]
@@ -1181,7 +1184,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
 
       var pp := R.ImplFor(
         sTypeParams,
-        R.RawType("::std::cmp::PartialEq"),
+        R.RawType("::core::cmp::PartialEq"),
         R.TypeApp(R.TIdentifier(escapeIdent(c.name)), typeParamsAsTypes),
         "",
         [R.FnDecl(
@@ -1191,7 +1194,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
              [R.Formal.self, R.Formal("other", R.Self)],
              Some(R.RawType("bool")),
              "",
-             Some(R.RawExpr("::std::ptr::eq(self, other)"))
+             Some(R.RawExpr("::core::ptr::eq(self, other)"))
            ))]
       );
       var ptrPartialEqImpl := [R.ImplDecl(pp)];
@@ -1257,7 +1260,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
           fnBody := fnBody + escapeIdent(c.name) + "(" + eStr.ToString(IND) + ")\n";
         }
         case None => {
-          fnBody := fnBody + escapeIdent(c.name) + "(::std::default::Default::default())";
+          fnBody := fnBody + escapeIdent(c.name) + "(::core::default::Default::default())";
         }
       }
 
@@ -1285,8 +1288,8 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
                      "",
                      [R.FnDecl(R.PRIV,
                                R.Fn("fmt_print", [],
-                                    [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::std::fmt::Formatter")), R.Formal("in_seq", R.RawType("bool"))],
-                                    Some(R.RawType("::std::fmt::Result")),
+                                    [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::core::fmt::Formatter")), R.Formal("in_seq", R.RawType("bool"))],
+                                    Some(R.RawType("::core::fmt::Result")),
                                     "",
                                     Some(R.RawExpr("::dafny_runtime::DafnyPrint::fmt_print(&self.0, _formatter, in_seq)"))
                                ))]))];
@@ -1294,7 +1297,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         R.ImplDecl(
           R.ImplFor(
             sConstrainedTypeParams,
-            R.RawType("::std::ops::Deref"),
+            R.RawType("::core::ops::Deref"),
             R.TypeApp(R.TIdentifier(escapeIdent(c.name)), typeParamsAsTypes),
             "",
             [R.RawImplMember("type Target = " + underlyingType.ToString(IND) + ";"),
@@ -1374,7 +1377,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
 
               if hasMatchingField {
                 if c.isCo {
-                  rhs := "::std::ops::Deref::deref(&" + escapeIdent(formal.name) + ".0)";
+                  rhs := "::core::ops::Deref::deref(&" + escapeIdent(formal.name) + ".0)";
                 } else {
                   rhs := escapeIdent(formal.name) + "";
                 }
@@ -1418,7 +1421,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         var types: seq<R.Type> := [];
         while typeI < |c.typeParams| {
           var genTp := GenType(c.typeParams[typeI], false, false);
-          types := types + [R.TypeApp(R.TIdentifier("::std::marker::PhantomData::"), [genTp])];
+          types := types + [R.TypeApp(R.TIdentifier("::core::marker::PhantomData::"), [genTp])];
           typeI := typeI + 1;
         }
         ctors := ctors + [R.EnumCase("_PhantomVariant",
@@ -1499,8 +1502,8 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
                R.PRIV,
                R.Fn(
                  "fmt_print", [],
-                 [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::std::fmt::Formatter")), R.Formal("_in_seq", R.RawType("bool"))],
-                 Some(R.RawType("std::fmt::Result")),
+                 [R.Formal.self, R.Formal("_formatter", R.RawType("&mut ::core::fmt::Formatter")), R.Formal("_in_seq", R.RawType("bool"))],
+                 Some(R.RawType("core::fmt::Result")),
                  "",
                  Some(printImplBody)))]
           ))];
@@ -1513,7 +1516,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         while i < |c.ctors[0].args| {
           var formal := c.ctors[0].args[i];
           structAssignments := structAssignments + [
-            R.AssignIdentifier(escapeIdent(formal.name), R.RawExpr("::std::default::Default::default()"))
+            R.AssignIdentifier(escapeIdent(formal.name), R.RawExpr("::core::default::Default::default()"))
           ];
           i := i + 1;
         }
@@ -1589,7 +1592,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
             }
             case Trait(_) => {
               if p == [Ident.Ident("_System"), Ident.Ident("object")] {
-                s := R.RawType("::std::rc::Rc<dyn ::std::any::Any>");
+                s := R.RawType("::alloc::rc::Rc<dyn ::core::any::Any>");
               } else {
                 if inBinding {
                   // impl trait in bindings is not stable
@@ -1612,7 +1615,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         }
         case Nullable(inner) => {
           var innerExpr := GenType(inner, inBinding, inFn);
-          s := R.TypeApp(R.TIdentifier("::std::option::Option"), [innerExpr]);
+          s := R.TypeApp(R.TIdentifier("::core::option::Option"), [innerExpr]);
         }
         case Tuple(types) => {
           var args := [];
@@ -1662,9 +1665,9 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         case Arrow(args, result) => {
           // we cannot use impl until Rc<Fn> impls Fn
           // if inFn || inBinding {
-          //  s := "::dafny_runtime::FunctionWrapper<::std::rc::Rc<dyn ::std::ops::Fn(";
+          //  s := "::dafny_runtime::FunctionWrapper<::alloc::rc::Rc<dyn ::core::ops::Fn(";
           // } else {
-          //   s := "::dafny_runtime::FunctionWrapper<impl ::std::ops::Fn(";
+          //   s := "::dafny_runtime::FunctionWrapper<impl ::core::ops::Fn(";
           // }
           var argTypes := [];
           var i := 0;
@@ -2297,12 +2300,12 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
           r := R.LiteralInt(Strings.OfNat(c as nat));
           if !UnicodeChars {
             r :=
-              R.global.MSel("std").MSel("primitive")
+              R.global.MSel("core").MSel("primitive")
               .MSel("char").MSel("from_u16")
               .Apply1(r).Sel("unwrap").Apply([], []);
           } else {
             r :=
-              R.global.MSel("std").MSel("primitive")
+              R.global.MSel("core").MSel("primitive")
               .MSel("char").MSel("from_u32")
               .Apply1(r).Sel("unwrap").Apply([], []);
           }
@@ -2312,7 +2315,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
           return;
         }
         case Literal(Null(tpe)) => {
-          // TODO: Mikael. Null will be std::ptr::null, not Option::None.
+          // TODO: Mikael. Null will be core::ptr::null, not Option::None.
           var tpeGen := GenType(tpe, false, false);
           r := R.TypeAscription(R.RawExpr("None"), tpeGen);
           r, resultingOwnership := FromOwned(r, expectedOwnership);
@@ -2436,7 +2439,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
                   if (nullable) {
                     r := R.Call(R.RawExpr("::dafny_runtime::nullable_referential_equality"), [], [left, right]);
                   } else {
-                    r := R.Call(R.RawExpr("::std::rc::Rc::ptr_eq"), [], [left, right]);
+                    r := R.Call(R.RawExpr("::alloc::rc::Rc::ptr_eq"), [], [left, right]);
                   }
                 } else {
                   r := R.BinaryOp("==", left, right, DAST.Format.BinaryOpFormat.NoFormat());
@@ -2502,7 +2505,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         r := r.Sel("clone").Apply([], []);
       }
 
-      r := R.std.MSel("option").MSel("Option").MSel("Some").Apply([], [r]);
+      r := R.core.MSel("option").MSel("Option").MSel("Some").Apply([], [r]);
       r, resultingOwnership := FromOwnership(r, recOwned, expectedOwnership);
       readIdents := recIdents;
     }
@@ -2727,7 +2730,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         }
         case InitializationValue(typ) => {
           var typExpr := GenType(typ, false, false);
-          r := R.RawExpr("<" + typExpr.ToString(IND) + " as std::default::Default>::default()");
+          r := R.RawExpr("<" + typExpr.ToString(IND) + " as core::default::Default>::default()");
           r, resultingOwnership := FromOwned(r, expectedOwnership);
           readIdents := {};
           return;
@@ -2758,7 +2761,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         case New(path, typeArgs, args) => {
           var path := GenPath(path);
           // TODO(Mikael) Use allocate(...) here.
-          var s := "::std::rc::Rc::new(" + path;
+          var s := "::alloc::rc::Rc::new(" + path;
           if |typeArgs| > 0 {
             var i := 0;
             var typeExprs := [];
@@ -2793,12 +2796,12 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
           var i := |dims| - 1;
           var genTyp := GenType(typ, false, false);
           // TODO (Mikael): Prevent arrays from being initialized without initialization code
-          var s := "<" + genTyp.ToString(IND) + " as ::std::default::Default>::default()";
+          var s := "<" + genTyp.ToString(IND) + " as ::core::default::Default>::default()";
           readIdents := {};
           while i >= 0 {
             var recursiveGen, _, recIdents := GenExpr(dims[i], selfIdent, params, OwnershipOwned);
 
-            s := "::std::rc::Rc::new(::std::cell::RefCell::new(vec![" + s + "; <usize as ::dafny_runtime::NumCast>::from(" + recursiveGen.ToString(IND) + ").unwrap()]))";
+            s := "::alloc::rc::Rc::new(::core::cell::RefCell::new(vec![" + s + "; <usize as ::dafny_runtime::NumCast>::from(" + recursiveGen.ToString(IND) + ").unwrap()]))";
             readIdents := readIdents + recIdents;
 
             i := i - 1;
@@ -2810,7 +2813,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
         }
         case DatatypeValue(path, typeArgs, variant, isCo, values) => {
           var path := GenPath(path);
-          var s := "::std::rc::Rc::new(" + path + "::";
+          var s := "::alloc::rc::Rc::new(" + path + "::";
           if |typeArgs| > 0 {
             s := s + "<";
             var i := 0;
@@ -2847,7 +2850,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
                 allReadCloned := allReadCloned + "let " + escapeIdent(next) + " = " + escapeIdent(next) + ".clone();\n";
                 recIdents := recIdents - {next};
               }
-              s := s + escapeIdent(name) + ": ::dafny_runtime::LazyFieldWrapper(::dafny_runtime::Lazy::new(::std::boxed::Box::new({\n" + allReadCloned + "move || (" + recursiveGen.ToString(IND) + ")})))";
+              s := s + escapeIdent(name) + ": ::dafny_runtime::LazyFieldWrapper(::dafny_runtime::Lazy::new(::alloc::boxed::Box::new({\n" + allReadCloned + "move || (" + recursiveGen.ToString(IND) + ")})))";
             } else {
               var recursiveGen, _, recIdents := GenExpr(value, selfIdent, params, OwnershipOwned);
 
@@ -3113,7 +3116,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
             s := s + "}";
           }
 
-          var typeShape := "dyn ::std::ops::Fn(";
+          var typeShape := "dyn ::core::ops::Fn(";
           var i := 0;
           while i < arity {
             if i > 0 {
@@ -3125,7 +3128,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
 
           typeShape := typeShape + ") -> _";
 
-          s := "::dafny_runtime::FunctionWrapper(::std::rc::Rc::new(" + s + ") as ::std::rc::Rc<" + typeShape + ">)";
+          s := "::dafny_runtime::FunctionWrapper(::alloc::rc::Rc::new(" + s + ") as ::alloc::rc::Rc<" + typeShape + ">)";
           r := R.RawExpr(s);
           r, resultingOwnership := FromOwned(r, expectedOwnership);
           readIdents := recIdents;
@@ -3147,7 +3150,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
             r, resultingOwnership := FromOwned(r, expectedOwnership);
           } else {
             var s: string;
-            s := "::std::ops::Deref::deref(&((" + onExpr.ToString(IND) + ")" + "." + escapeIdent(field) + ".borrow()))";
+            s := "::core::ops::Deref::deref(&((" + onExpr.ToString(IND) + ")" + "." + escapeIdent(field) + ".borrow()))";
             r, resultingOwnership := FromOwnership(R.RawExpr(s), OwnershipBorrowed, expectedOwnership);
           }
           readIdents := recIdents;
@@ -3309,7 +3312,7 @@ module {:extern "DCOMP"} DafnyToRustCompiler {
 
           var retTypeGen := GenType(retType, false, true);
 
-          r := R.RawExpr("::dafny_runtime::FunctionWrapper::<::std::rc::Rc<dyn ::std::ops::Fn(" + paramTypes + ") -> " + retTypeGen.ToString(IND) + ">>({\n" + allReadCloned + "::std::rc::Rc::new(move |" + paramsString + "| -> " + retTypeGen.ToString(IND) + " {\n" + recursiveGen.ToString(IND) + "\n})})");
+          r := R.RawExpr("::dafny_runtime::FunctionWrapper::<::alloc::rc::Rc<dyn ::core::ops::Fn(" + paramTypes + ") -> " + retTypeGen.ToString(IND) + ">>({\n" + allReadCloned + "::alloc::rc::Rc::new(move |" + paramsString + "| -> " + retTypeGen.ToString(IND) + " {\n" + recursiveGen.ToString(IND) + "\n})})");
           r, resultingOwnership := FromOwned(r, expectedOwnership);
           return;
         }
