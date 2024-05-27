@@ -27,6 +27,6 @@ else
   output="GeneratedFromDafny"
 fi
 
-../../Scripts/dafny translate cs dfyconfig.toml --output $output.cs $noverify
+dafny translate cs dfyconfig.toml --output $output.cs $noverify
 rm $output-cs.dtr 
 python3 DafnyGeneratedFromDafnyPost.py $output
